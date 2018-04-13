@@ -1,0 +1,263 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Lab1 chatroom</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box;}
+      body { font: 13px Helvetica, Arial; }
+	  #InputBar{ width: 100%; overflow: hidden; background-color: #000;padding: 10px;}
+	  #InputBar input { border: 10px; padding: 10px; width: 100%;}
+	  #InputBar #Menu {float: left;}
+	  #InputBar select {border: 5; padding: 10px;}
+	  #InputBar span { display: block; overflow: hidden; padding: 0 5px;}
+	  #InputBar #sendImgBtn { border: 5; padding: 10px; width: auto; background: #B9D6F2;}
+	  #InputBar #sendBtn { border: 5; padding: 10px; width: auto; background: #B9D6F2; float: right;}
+      #messages {width:100%; position: fixed; top:0; bottom: 64px; overflow:auto;}
+      #messages li { padding: 5px 10px;}
+      #messages li:nth-child(odd) { background: #B9D6F2; }
+      #messages li:nth-child(even) { background: #E3EBF2; }
+	  #typingMessage{background: #00A1FF; width:100%;}
+	  #footer{position: fixed; bottom: 0; width:100%;}
+    </style>
+	<script src='https://cdn.socket.io/socket.io-1.3.5.js'></script>
+    <script src='https://code.jquery.com/jquery-1.11.3.js'></script>
+  </head>
+<body>
+    <ul id='messages'>
+    </ul>
+	<div id='footer'>
+		<div id='typingMessage'>
+		</div>
+		<div id='InputBar'>
+			<button id = 'sendBtn'>Send</button>
+			<div id = 'Menu'>
+				<button id = 'sendImgBtn'> Image + </button>
+				<select id = 'SelectUser'>
+					<option value='all'>All</option>
+				</select>
+			</div>
+			<span><input id='content'/></span>
+		</div>
+	</div>
+	<input id = 'imageFile'  style='visibility: hidden;' type='file' accept='image/*'>
+	<script>
+		var socket = io();
+		var userName;
+		var receiveName = 'all';
+		var strRegex = "^((https|http|ftp|rtsp|mms)?://)"
+				+ "?(([0-9a-z_!~*'().&amp;=+$%-]+: )?[0-9a-z_!~*'().&amp;=+$%-]+@)?" //ftp的user@
+				+ "(([0-9]{1,3}\.){3}[0-9]{1,3}" // IP形式的URL- 199.194.52.184
+				+ "|" // 允許IP和DOMAIN（域名）
+				+ "([0-9a-z_!~*'()-]+\.)*" // 域名- www.
+				+ "([0-9a-z][0-9a-z-]{0,61})?[0-9a-z]\." // 二級域名
+				+ "[a-z]{2,6})" // first level domain- .com or .museum
+				+ "(:[0-9]{1,4})?" // 埠- :80
+				+ "((/?)|" // a slash isn't required if there is no file name
+				+ "(/[0-9a-z_!~*'().;?:@&amp;=+$,%#-]+)+/?)$";
+
+		var urlCheck=new RegExp(strRegex);
+
+/*
+New User 事件：
+	1.檢查User name 有沒有重複
+	2.新增User 到User list 裡面
+	3.在聊天室中顯示有user加入
+*/
+		//1.檢查User name有沒有重複
+		socket.on('Name exist', function (name) {
+            alert('Your username '+name+' has been used!!');
+			AskUserName();
+        });
+
+		//2.在user list中新增新的user
+		socket.on('add userList', function (name) {
+			if(userName!=name){
+				$('#SelectUser').append($('<option></option>').attr('value', name).text(name));
+			}
+        });
+
+		//3.在聊天室中顯示有user加入
+		socket.on('New user join',function (Name) {
+			$('#messages').append($('<li>').text(TimeFormat(new Date())+ Name + ' Join'));
+		});
+		
+/*
+Typing 事件：
+	1.檢查有沒有人在typing,誰在typing
+	2.把typing的人顯示在螢幕上
+*/	
+		//1.檢查有沒有人在typing
+		$('#content').keyup(function() {
+			if(receiveName == 'all'){
+				if($('#content').val() != ''){
+					socket.emit('start typing',userName);
+				}
+				else{
+					socket.emit('stop typing',userName);
+				}
+			}
+		});
+		//2.把typing的人顯示在螢幕上
+		socket.on('typing', function (typingUsers) {
+			if(typingUsers.length != 0){
+				$('#typingMessage').text(typingUsers + ' is typing...');
+			}
+			else{
+				$('#typingMessage').text('');
+			}
+        });
+        
+
+/*
+Chatting：
+	function: 
+	SubmitMessage: enter key or press send button
+	AppendMessage: activated by the submitfunction -> display the message on the screen
+
+*/	
+        //key control sending message
+		$('#content').keydown(function (e) {
+			if (e.keyCode == 13) {
+				submitMessage();
+			}
+		});
+		//display the message on the screen
+        socket.on('chat message', function (userName, receiveName, msg, currentdate) {
+			AppendMessage(userName, receiveName, msg, currentdate);
+        });
+		
+
+				
+/*
+Left 事件：
+	1.檢查有沒有人在typing
+	2.新增User 到User list 裡面
+	3.在聊天室中顯示有user加入
+	function: 
+*/
+		socket.on('user left', function (Name) {
+            $('#messages').append($('<li>').text(TimeFormat(new Date())+ Name + ' Left'));
+			$('#SelectUser').find('[value=\''+Name+'\']').remove();
+			socket.emit('stop typing',userName);
+        });
+		
+		socket.on('disconnect', function () {
+			alert('Lost connection\nGG...');
+		});
+
+		
+		
+/*
+Change Target User：
+	1.
+	2.新增User 到User list 裡面
+	3.在聊天室中顯示有user加入
+	function: 
+*/	
+		$('#SelectUser').change(function(){
+			receiveName = $('#SelectUser').find(':selected').val();
+			socket.emit('stop typing',userName);
+		});
+		
+		
+
+//=================
+//====Bottons======
+//=================
+
+		$('#sendBtn').click(function () {
+			submitMessage();
+        });
+		
+		$('#sendImgBtn').click(function() {
+			$('#imageFile').click();
+		});
+		
+		$('#imageFile').change(function(){
+			if($('#imageFile').val()!=''){
+				readImage(this);
+				$('#imageFile').val('');
+				$('#content').focus();
+			}
+		});
+//=================
+//===Functions=====
+//=================
+		function AskUserName(){
+			do{
+				userName = prompt('Please enter your name', 'UserName');
+			}while(userName == null || userName == '')
+			socket.emit('New User',userName);
+		}
+		
+		
+		function submitMessage(){
+			if($('#content').val().trim() != ''){
+				var date = new Date();
+				$('#messages').css('bottom',$('#footer').outerHeight());
+				AppendMessage(userName, receiveName, $('#content').val(), date)
+				socket.emit('chat message', userName, receiveName, $('#content').val(), date);
+				$('#content').val('');
+			}
+			socket.emit('stop typing',userName);
+			$('#content').focus();
+		}
+		
+		function AppendMessage(userName, receiveName, msg, date){
+			if(msg.startsWith('data:image')){
+				if(receiveName == 'all'){
+					$('#messages').append($('<li>').append([
+						(TimeFormat(date)) +userName+ ': ',
+						$('<img>', {src: msg, width: 300, height: 'auto'})
+					]));
+				}
+				else{
+					$('#messages').append($('<li>').css({
+						'color': '#000066',
+						'font-weight': 'bolder'
+					}).append([
+						(TimeFormat(date)) + userName + ' to ' + receiveName + ': ',
+						$('<img>', {src: msg, width: 300, height: 'auto'})
+					]));
+				}
+			}
+			else{
+				if(receiveName == 'all'){
+					$('#messages').append($('<li>').text(TimeFormat(date) +userName+ ': '+msg));
+				}
+				else{
+					$('#messages').append($('<li>').text(TimeFormat(date) +userName+' to '+receiveName + ': '+msg).css({
+						'color': '#000066',
+						'font-weight': 'bolder'
+					}));
+				}
+			}			
+		}
+		
+		function readImage(input) {
+			if ( input.files && input.files[0] ) {
+				var FR= new FileReader();
+				FR.onload = function(e) {
+					var date = new Date();
+					AppendMessage(userName, receiveName, e.target.result, date)
+					socket.emit('chat message', userName, receiveName, e.target.result, date);
+				};       
+				FR.readAsDataURL( input.files[0] );
+			}
+		}
+	
+		function TimeFormat(currentdate){
+			var date = new Date(currentdate);
+			var datetime ='[' + Tidy(date.getHours()) + ':' + Tidy(date.getMinutes()) + ':' + Tidy(date.getSeconds())+'] ';
+			return datetime;
+		}
+
+		function Tidy(obj){
+			if(obj<10) return "0" +""+ obj;
+			else return obj;
+		}
+		
+		AskUserName();
+    </script>
+</body>
+</html>
